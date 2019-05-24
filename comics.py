@@ -1,5 +1,6 @@
 import os
 import random
+import glob
 
 import requests
 from dotenv import load_dotenv
@@ -49,15 +50,6 @@ def get_comics(comics_id):
     return get_json_from_url(url)
 
 
-def get_upload_url(VK_TOKEN):
-    method = 'photos.getWallUploadServer'
-    url = 'https://api.vk.com/method/{}'.format(method)
-    params = {'access_token': VK_TOKEN, 'v': 5.95}
-    response = get_json_from_url(url, params=params)
-    print(response)
-    return response['upload_url']
-
-
 def download_random_comics(img_folder):
     random_id = get_random_comics_id()
     comics_json  = get_comics(random_id)
@@ -66,8 +58,20 @@ def download_random_comics(img_folder):
     return  (image_name, get_comment(comics_json))
 
 
-def upload_img():
-    pass
+def get_upload_url(VK_TOKEN):
+    method = 'photos.getWallUploadServer'
+    url = 'https://api.vk.com/method/{}'.format(method)
+    params = {'access_token': VK_TOKEN, 'v': 5.95}
+    response = get_json_from_url(url, params=params)
+    return response['upload_url']
+
+
+def upload_img(upload_url, image_file_path):
+    files = {
+        'media': open(image_file_path, 'rb')
+    }
+    response = requests.post(upload_url, files=files)
+    return response
 
 
 def save_iamge_on_wall():
@@ -78,17 +82,22 @@ def post_image():
     pass
 
 
-def remove_upload_image():
-    pass
+def remove_upload_image(dir_path):
+    files = glob.glob('{}/*'.format(dir_path))
+    for file in files:
+        if os.path.isfile(file):
+            os.remove(file)
     
 
 def main():
+    image_folder = 'image'
     METHOD_NAME = 'groups.get'
     vk_url = f'https://api.vk.com/method/{METHOD_NAME}'
     playload = {'access_token': os.getenv('VK_TOKEN'), 'v': 5.95}
     response = requests.get(vk_url, params=playload)
-    print(download_random_comics('image'))
+    print(download_random_comics(image_folder))
     print(get_upload_url(os.getenv('VK_TOKEN')))
+    remove_upload_image(image_folder)
 
 
 if __name__ == '__main__':
