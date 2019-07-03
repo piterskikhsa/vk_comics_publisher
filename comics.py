@@ -8,12 +8,10 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# http://xkcd.com/info.0.json
-# http://xkcd.com/614/info.0.json 
-# {"month": "5", "num": 2152, "link": "", "year": "2019", "news": "", "safe_title": "Westerns", "transcript": "", 
-# "alt": "Sitting here idly trying to figure out how the population of the Old West in the late 1800s compares to the number of Red Dead Redemption 2 players.", 
-# "img": "https://imgs.xkcd.com/comics/westerns.png", "title": "Westerns", "day": "20"}
 
+def get_output_folder(output_folder_path):
+    os.makedirs(output_folder_path, exist_ok=True)
+    return output_folder_path
 
 
 def download_image(image_link, image_name):
@@ -52,34 +50,64 @@ def get_comics(comics_id):
 
 def download_random_comics(img_folder):
     random_id = get_random_comics_id()
-    comics_json  = get_comics(random_id)
+    comics_json = get_comics(random_id)
     output_name = '{}/{}'.format(img_folder, comics_json['title'])
     image_name = download_image(comics_json['img'], output_name)
-    return  (image_name, get_comment(comics_json))
+    return image_name, get_comment(comics_json)
 
 
-def get_upload_url(VK_TOKEN):
-    method = 'photos.getWallUploadServer'
-    url = 'https://api.vk.com/method/{}'.format(method)
-    params = {'access_token': VK_TOKEN, 'v': 5.95}
+def get_params(token, version=5.95, **kwargs):
+    return {'access_token': token, 'v': version, **kwargs}
+
+
+def get_url(method):
+    return 'https://api.vk.com/method/{}'.format(method)
+
+
+def get_upload_url(params):
+    url = get_url('photos.getWallUploadServer')
     response = get_json_from_url(url, params=params)
-    return response['upload_url']
+    try:
+        upload_url = response['response']['upload_url']
+    except KeyError:
+        raise ValueError(response['error'])
+    return upload_url
 
 
-def upload_img(upload_url, image_file_path):
+def upload_img_on_wall(upload_url, image_file_path):
     files = {
-        'media': open(image_file_path, 'rb')
+        'photo': open(image_file_path, 'rb')
     }
     response = requests.post(upload_url, files=files)
-    return response
+    response.raise_for_status()
+    return response.json()
 
 
-def save_iamge_on_wall():
-    pass
+def save_image_on_wall(params):
+    url = get_url('photos.saveWallPhoto')
+    response = requests.post(url, params=params)
+    response.raise_for_status()
+    return response.json()
 
 
-def post_image():
-    pass
+def post_image(params):
+    url = get_url('wall.post')
+    response = get_json_from_url(url, params=params)
+    return response.get('response')
+
+
+def post_image_on_wall(token, group_id, image_name, image_description):
+    upload_url = get_upload_url(get_params(token))
+    upload_data = upload_img_on_wall(upload_url, image_name)
+    save_on_wall_data = save_image_on_wall(get_params(token=token, **upload_data))
+    attach_data = save_on_wall_data['response'][0]
+    some_params = {
+        'owner_id': group_id,
+        'from_group': 1,
+        'attachments': 'photo{}_{}'.format(attach_data['owner_id'], attach_data['id']),
+        'message': image_description}
+    post = post_image(get_params(token, **some_params))
+    return post
 
 
 def remove_upload_image(dir_path):
@@ -90,14 +118,14 @@ def remove_upload_image(dir_path):
     
 
 def main():
-    image_folder = 'image'
-    METHOD_NAME = 'groups.get'
-    vk_url = f'https://api.vk.com/method/{METHOD_NAME}'
-    playload = {'access_token': os.getenv('VK_TOKEN'), 'v': 5.95}
-    response = requests.get(vk_url, params=playload)
-    print(download_random_comics(image_folder))
-    print(get_upload_url(os.getenv('VK_TOKEN')))
-    remove_upload_image(image_folder)
+    auth_token = os.getenv('VK_TOKEN')
+    group_id = os.getenv('GROUP_ID')
+    image_folder = get_output_folder('image')
+    image_name, image_description = download_random_comics(image_folder)
+    post = post_image_on_wall(auth_token, group_id, image_name, image_description)
+    if post:
+        remove_upload_image(image_folder)
+        print(post)
 
 
 if __name__ == '__main__':
