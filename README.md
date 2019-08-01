@@ -31,7 +31,7 @@ Python3 должен быть уже установлен.
 ```bash
 pipenv install
 ```
-or
+или
 ```bash
 pip install -r requirements.txt
 ```
