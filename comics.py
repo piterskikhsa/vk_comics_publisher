@@ -1,29 +1,23 @@
 import os
 import random
-import glob
+import sys
+import tempfile
 
 import requests
 from dotenv import load_dotenv
 
 
-load_dotenv()
-
-
-def get_output_folder(output_folder_path):
-    os.makedirs(output_folder_path, exist_ok=True)
-    return output_folder_path
-
-
-def download_image(image_link, image_name):
+def download_image(image_link):
     response = requests.get(image_link)
-    image_name = f'{image_name}{os.path.splitext(image_link)[-1]}'
     response.raise_for_status()
-    with open(image_name, 'wb') as out_file:
+    with tempfile.NamedTemporaryFile(suffix=os.path.splitext(image_link)[-1], delete=False) as out_file:
         out_file.write(response.content)
+        image_name = out_file.name
     return image_name
 
 
-def get_json_from_url(url, params={}):
+def get_json_from_url(url, params=None):
+    params = params or {}
     response = requests.get(url, params=params)
     response.raise_for_status()
     return response.json()
@@ -32,15 +26,8 @@ def get_json_from_url(url, params={}):
 def get_random_comics_id():
     url = 'http://xkcd.com/info.0.json'
     comics_json = get_json_from_url(url)
-    try:
-        max_comics_id = comics_json['num']
-    except KeyError:
-        return
+    max_comics_id = comics_json.get('num')
     return random.choice(range(max_comics_id))
-
-
-def get_comment(comics_data):
-    return comics_data.get('alt')
 
 
 def get_comics(comics_id):
@@ -48,12 +35,10 @@ def get_comics(comics_id):
     return get_json_from_url(url)
 
 
-def download_random_comics(img_folder):
-    random_id = get_random_comics_id()
-    comics_json = get_comics(random_id)
-    output_name = '{}/{}'.format(img_folder, comics_json['title'])
-    image_name = download_image(comics_json['img'], output_name)
-    return image_name, get_comment(comics_json)
+def download_comics(comics_id):
+    comics_json = get_comics(comics_id)
+    image_name = download_image(comics_json['img'])
+    return image_name, comics_json.get('alt')
 
 
 def get_params(token, version=5.95, **kwargs):
@@ -75,10 +60,12 @@ def get_upload_url(params):
 
 
 def upload_img_on_wall(upload_url, image_file_path):
-    files = {
-        'photo': open(image_file_path, 'rb')
-    }
-    response = requests.post(upload_url, files=files)
+    with open(image_file_path, 'rb') as file:
+        files = {
+            'photo': file
+        }
+        response = requests.post(upload_url, files=files)
+
     response.raise_for_status()
     return response.json()
 
@@ -110,22 +97,18 @@ def post_image_on_wall(token, group_id, image_name, image_description):
     return post
 
 
-def remove_upload_image(dir_path):
-    files = glob.glob('{}/*'.format(dir_path))
-    for file in files:
-        if os.path.isfile(file):
-            os.remove(file)
-    
-
 def main():
+    load_dotenv()
     auth_token = os.getenv('VK_TOKEN')
     group_id = os.getenv('GROUP_ID')
-    image_folder = get_output_folder('image')
-    image_name, image_description = download_random_comics(image_folder)
-    post = post_image_on_wall(auth_token, group_id, image_name, image_description)
-    if post:
-        remove_upload_image(image_folder)
-        print(post)
+    image_name, image_description = download_comics(get_random_comics_id())
+    try:
+        post = post_image_on_wall(auth_token, group_id, image_name, image_description)
+        print('Комикс был загружен на стену под id={}'.format(post['post_id']))
+    except KeyError:
+        sys.exit("Ошибка! Комикс загрузить не удалось.")
+    finally:
+        os.unlink(image_name)
 
 
 if __name__ == '__main__':
