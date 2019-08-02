@@ -7,15 +7,6 @@ import requests
 from dotenv import load_dotenv
 
 
-def download_image(image_link):
-    response = requests.get(image_link)
-    response.raise_for_status()
-    with tempfile.NamedTemporaryFile(suffix=os.path.splitext(image_link)[-1], delete=False) as out_file:
-        out_file.write(response.content)
-        image_name = out_file.name
-    return image_name
-
-
 def get_json_from_url(url, params=None):
     params = params or {}
     response = requests.get(url, params=params)
@@ -35,12 +26,6 @@ def get_comics(comics_id):
     return get_json_from_url(url)
 
 
-def download_comics(comics_id):
-    comics_json = get_comics(comics_id)
-    image_name = download_image(comics_json['img'])
-    return image_name, comics_json.get('alt')
-
-
 def get_params(token, version=5.95, **kwargs):
     return {'access_token': token, 'v': version, **kwargs}
 
@@ -52,10 +37,7 @@ def get_url(method):
 def get_upload_url(params):
     url = get_url('photos.getWallUploadServer')
     response = get_json_from_url(url, params=params)
-    try:
-        upload_url = response['response']['upload_url']
-    except KeyError:
-        raise ValueError(response['error'])
+    upload_url = response['response']['upload_url']
     return upload_url
 
 
@@ -101,14 +83,16 @@ def main():
     load_dotenv()
     auth_token = os.getenv('VK_TOKEN')
     group_id = os.getenv('GROUP_ID')
-    image_name, image_description = download_comics(get_random_comics_id())
+    comics_json = get_comics(get_random_comics_id())
     try:
-        post = post_image_on_wall(auth_token, group_id, image_name, image_description)
+        response = requests.get(comics_json['img'])
+        response.raise_for_status()
+        with tempfile.NamedTemporaryFile(suffix=os.path.splitext(comics_json['img'])[-1]) as image_file:
+            image_file.write(response.content)
+            post = post_image_on_wall(auth_token, group_id, image_file.name, comics_json.get('alt'))
         print('Комикс был загружен на стену под id={}'.format(post['post_id']))
     except KeyError:
         sys.exit("Ошибка! Комикс загрузить не удалось.")
-    finally:
-        os.unlink(image_name)
 
 
 if __name__ == '__main__':
